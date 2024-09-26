@@ -13,9 +13,9 @@ import {
   Alert,
 } from 'react-native';
 import axios from 'axios';
-import qs from 'qs'; // Import qs for query string formatting
+import qs from 'qs';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Import AsyncStorage
 
-// Global variable for the base URL
 let baseUrl = '';
 
 const LoginScreen = ({ navigation }) => {
@@ -41,15 +41,12 @@ const LoginScreen = ({ navigation }) => {
 
   const loginUser = async () => {
     baseUrl = formatUrl(url);
-    console.log(`Formatted URL: ${baseUrl}`); // Debugging line
-    console.log(`Username: ${username}`); // Debugging line
-    console.log(`Password: ${password}`); // Debugging line
     const requestBody = qs.stringify({
       grant_type: 'password',
       username: username,
       password: password,
     });
-    console.log('Request body:', requestBody); // Debugging line
+
     try {
       const response = await axios.post(`${baseUrl}/token`, 
         requestBody, 
@@ -60,13 +57,12 @@ const LoginScreen = ({ navigation }) => {
         }
       );
 
-      console.log('Response:', response); // Debugging line
-
       if (response.status >= 200 && response.status < 300) {
-        const { access_token, refresh_token, mfa_token, expires_in } = response.data;
-        // Handle tokens as needed
-        // Store tokens for future API calls
-        // Example: AsyncStorage.setItem('accessToken', access_token);
+        const { access_token, refresh_token, expires_in } = response.data;
+        await AsyncStorage.setItem('accessToken', access_token);
+        await AsyncStorage.setItem('refreshToken', refresh_token);
+        await AsyncStorage.setItem('expiresIn', expires_in.toString());
+        await logStoredItems();
         return true;
       } else {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -84,6 +80,19 @@ const LoginScreen = ({ navigation }) => {
       }
       Alert.alert('Login failed', error.message);
       return false;
+    }
+  };
+
+  const logStoredItems = async () => {
+    try {
+      const accessToken = await AsyncStorage.getItem('accessToken');
+      const refreshToken = await AsyncStorage.getItem('refreshToken');
+      const expiresIn = await AsyncStorage.getItem('expiresIn');
+      console.log('Access Token:', accessToken);
+      console.log('Refresh Token:', refreshToken);
+      console.log('Expires In:', expiresIn);
+    } catch (error) {
+      console.error('Error retrieving stored items:', error);
     }
   };
 
