@@ -18,8 +18,8 @@ This project is for the Veeam Hackathon 2024. It is a mobile application designe
 ### Installation
 1. **Clone the repository**:
     ```sh
-    git clone https://github.com/yourusername/veeam-service-portal-app.git
-    cd veeam-service-portal-app
+    git clone [https://github.com/VeeamCommunity/veeamcommunity-2024-Team-4.git]
+    cd veeamcommunity-2024-Team-4
     ```
 
 2. **Install dependencies**:
