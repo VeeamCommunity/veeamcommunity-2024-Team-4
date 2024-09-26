@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Veeam Service Portal App
 
 ## Overview
@@ -114,4 +114,3 @@ We welcome contributions from the community! We encourage you to create [issues]
 ## 🤔 Questions
 
 If you have any questions or something is unclear, please don't hesitate to [create an issue](https://github.com/VeeamCommunity/{repo-name}/issues/new/choose) and let us know!
->>>>>>> 4543cb6 (Added source code and configuration files)
