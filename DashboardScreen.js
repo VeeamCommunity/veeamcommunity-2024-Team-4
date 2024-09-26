@@ -1,26 +1,104 @@
-import React from 'react';
-import { SafeAreaView, StyleSheet, Text, View, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { SafeAreaView, StyleSheet, Text, View, ScrollView, TouchableOpacity, useWindowDimensions, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-
-console.log('DashboardScreen - Start of file');
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import qs from 'qs';
 
 const DashboardScreen = () => {
-  console.log('DashboardScreen - Component rendering');
   const navigation = useNavigation();
   const { width: screenWidth } = useWindowDimensions();
-  console.log('DashboardScreen - Screen width:', screenWidth);
+  const [jobStatuses, setJobStatuses] = useState([]);
+  const [jobCounts, setJobCounts] = useState({ success: 0, failed: 0, warning: 0 });
 
-  const data = [20, 45, 28, 80, 99, 43];
-  const maxValue = Math.max(...data);
+  useEffect(() => {
+    const fetchJobStatuses = async () => {
+      try {
+        const baseUrl = await AsyncStorage.getItem('baseUrl');
+        let accessToken = await AsyncStorage.getItem('accessToken');
+        const refreshToken = await AsyncStorage.getItem('refreshToken');
+        const expiresIn = await AsyncStorage.getItem('expiresIn');
+        const currentTime = new Date().getTime();
 
-  const renderBar = (value, index) => {
-    const barWidth = (value / maxValue) * (screenWidth - 120); // Adjusted for padding and text
+        if (currentTime >= parseInt(expiresIn)) {
+          // Token expired, refresh it
+          const response = await axios.post(`${baseUrl}/token`, 
+            qs.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }), 
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+          );
+          if (response.status >= 200 && response.status < 300) {
+            accessToken = response.data.access_token;
+            const newExpiresIn = new Date().getTime() + response.data.expires_in * 1000;
+            await AsyncStorage.setItem('accessToken', accessToken);
+            await AsyncStorage.setItem('expiresIn', newExpiresIn.toString());
+          } else {
+            throw new Error('Failed to refresh token');
+          }
+        }
+
+        const jobResponse = await axios.get(`${baseUrl}/infrastructure/backupServers/jobs`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (jobResponse.status >= 200 && jobResponse.status < 300) {
+          const jobs = jobResponse.data.data;
+          setJobStatuses(jobs);
+
+          // Calculate job counts
+          const counts = { success: 0, failed: 0, warning: 0 };
+          const currentTime = new Date();
+          jobs.forEach(job => {
+            const lastRunTime = new Date(job.lastRun);
+            const isRecent = (currentTime - lastRunTime) / (1000 * 60 * 60) < 24; // within 24 hours
+            if (isRecent) {
+              if (job.status === 'Success') {
+                counts.success += 1;
+              } else if (job.status === 'Warning') {
+                counts.warning += 1;
+              } else if (job.status === 'Failed') {
+                counts.failed += 1;
+              }
+            }
+          });
+          setJobCounts(counts);
+        } else {
+          throw new Error('Failed to fetch job statuses');
+        }
+      } catch (error) {
+        console.error('Error fetching job statuses:', error);
+        Alert.alert('Error', 'Failed to fetch job statuses');
+      }
+    };
+
+    fetchJobStatuses();
+  }, []);
+
+  const renderJobStatus = (job, index) => {
+    const lastRunTime = new Date(job.lastRun);
+    const currentTime = new Date();
+    const isRecent = (currentTime - lastRunTime) / (1000 * 60 * 60) < 24; // within 24 hours
+    let statusColor = 'gray';
+
+    if (job.status === 'Success') {
+      statusColor = 'green';
+    } else if (job.status === 'Warning') {
+      statusColor = 'yellow';
+    } else if (job.status === 'Failed') {
+      statusColor = 'red';
+    }
+
     return (
-      <View key={index} style={styles.barContainer}>
-        <Text style={styles.barText}>{value}</Text>
-        <View style={[styles.bar, { width: barWidth }]} />
+      <View key={index} style={styles.jobStatusContainer}>
+        <Text style={[styles.jobStatusText, { color: statusColor }]}>
+          {job.name}: {job.status} {isRecent ? '(Recent)' : ''}
+        </Text>
+        <Text style={styles.jobStatusSubText}>Last Run: {lastRunTime.toLocaleString()}</Text>
       </View>
     );
+  };
+
+  const handleShowJobDetails = () => {
+    navigation.navigate('JobDetails', { jobStatuses });
   };
 
   const handleShowThreatCenter = () => {
@@ -34,11 +112,10 @@ const DashboardScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Remove the custom header here */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Backup Performance (Last 6 Months)</Text>
           <View style={styles.chartContainer}>
-            {data.map(renderBar)}
+            {/* Render your chart here */}
           </View>
         </View>
 
@@ -48,13 +125,12 @@ const DashboardScreen = () => {
             <Text style={styles.slaText}>98.5%</Text>
             <Text style={styles.slaSubtext}>Current compliance</Text>
           </View>
-          <View style={[styles.card, styles.halfCard]}>
+          <TouchableOpacity style={[styles.card, styles.halfCard]} onPress={handleShowJobDetails}>
             <Text style={styles.cardTitle}>Job Statuses</Text>
-            <View style={styles.jobStatusContainer}>
-              <Text style={styles.jobStatusText}>Successful: <Text style={styles.success}>45</Text></Text>
-              <Text style={styles.jobStatusText}>Failed: <Text style={styles.failed}>5</Text></Text>
-            </View>
-          </View>
+            <Text style={[styles.jobCountText, { color: 'green' }]}>Success: {jobCounts.success}</Text>
+            <Text style={[styles.jobCountText, { color: 'yellow' }]}>Warning: {jobCounts.warning}</Text>
+            <Text style={[styles.jobCountText, { color: 'red' }]}>Failed: {jobCounts.failed}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
@@ -83,22 +159,11 @@ const DashboardScreen = () => {
   );
 };
 
-console.log('DashboardScreen - End of file');
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
-  },
-  header: {
-    backgroundColor: '#004D40',
-    padding: 16,
-    alignItems: 'center',
-  },
-  headerText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
   },
   scrollContent: {
     padding: 16,
@@ -127,24 +192,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#004D40',
   },
-  chartContainer: {
-    padding: 10,
+  jobStatusContainer: {
+    marginBottom: 8,
   },
-  barContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
+  jobStatusText: {
+    fontSize: 16,
   },
-  bar: {
-    height: 20,
-    backgroundColor: 'rgb(134, 65, 244)',
-    borderRadius: 10,
-  },
-  barText: {
+  jobStatusSubText: {
     fontSize: 12,
-    width: 30,
-    marginRight: 5,
-    textAlign: 'right',
+    color: '#666',
   },
   slaText: {
     fontSize: 36,
@@ -156,19 +212,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
-  },
-  jobStatusContainer: {
-    alignItems: 'center',
-  },
-  jobStatusText: {
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  success: {
-    color: 'green',
-  },
-  failed: {
-    color: 'red',
   },
   spaceContainer: {
     marginTop: 8,
@@ -213,6 +256,11 @@ const styles = StyleSheet.create({
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  jobCountText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
   },
 });
 

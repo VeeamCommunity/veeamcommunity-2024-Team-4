@@ -59,9 +59,11 @@ const LoginScreen = ({ navigation }) => {
 
       if (response.status >= 200 && response.status < 300) {
         const { access_token, refresh_token, expires_in } = response.data;
+        const expirationTime = new Date().getTime() + expires_in * 1000;
+        await AsyncStorage.setItem('baseUrl', baseUrl); // Store baseUrl
         await AsyncStorage.setItem('accessToken', access_token);
         await AsyncStorage.setItem('refreshToken', refresh_token);
-        await AsyncStorage.setItem('expiresIn', expires_in.toString());
+        await AsyncStorage.setItem('expiresIn', expirationTime.toString());
         await logStoredItems();
         return true;
       } else {
@@ -85,9 +87,11 @@ const LoginScreen = ({ navigation }) => {
 
   const logStoredItems = async () => {
     try {
+      const baseUrl = await AsyncStorage.getItem('baseUrl');
       const accessToken = await AsyncStorage.getItem('accessToken');
       const refreshToken = await AsyncStorage.getItem('refreshToken');
       const expiresIn = await AsyncStorage.getItem('expiresIn');
+      console.log('Base URL:', baseUrl);
       console.log('Access Token:', accessToken);
       console.log('Refresh Token:', refreshToken);
       console.log('Expires In:', expiresIn);
