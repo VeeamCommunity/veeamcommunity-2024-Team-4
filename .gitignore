@@ -1,1 +1,12 @@
 .DS_Store
+#Added exlusions for my project
+node_modules/
+.env
+.env.local
+.expo/
+dist/
+build/
+.idea/
+.vscode/
+Thumbs.db
+*.log
