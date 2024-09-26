@@ -12,14 +12,10 @@ import {
   Switch,
   Alert,
 } from 'react-native';
-<<<<<<< HEAD
-=======
 import axios from 'axios';
-import qs from 'qs'; // Import qs for query string formatting
+import qs from 'qs'; 
 
-// Global variable for the base URL
 let baseUrl = '';
->>>>>>> 4543cb6 (Added source code and configuration files)
 
 const LoginScreen = ({ navigation }) => {
   const [url, setUrl] = useState('');
@@ -27,7 +23,6 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [isServiceProvider, setIsServiceProvider] = useState(false);
 
-<<<<<<< HEAD
   const handleLogin = () => {
     if (username && password) {
       if (isServiceProvider) {
@@ -36,80 +31,6 @@ const LoginScreen = ({ navigation }) => {
       } else {
         // Navigate to regular Dashboard
         navigation.replace('Dashboard');
-=======
-  const formatUrl = (inputUrl) => {
-    let formattedUrl = inputUrl;
-    if (!formattedUrl.startsWith('https://')) {
-      formattedUrl = 'https://' + formattedUrl;
-    }
-    if (!formattedUrl.endsWith(':1280/api/v3')) {
-      if (formattedUrl.endsWith('/')) {
-        formattedUrl = formattedUrl.slice(0, -1);
-      }
-      formattedUrl = formattedUrl.replace(/:1280\/api\/v3$/, '');
-      formattedUrl = formattedUrl + ':1280/api/v3';
-    }
-    return formattedUrl;
-  };
-
-  const loginUser = async () => {
-    baseUrl = formatUrl(url);
-    console.log(`Formatted URL: ${baseUrl}`); // Debugging line
-    console.log(`Username: ${username}`); // Debugging line
-    console.log(`Password: ${password}`); // Debugging line
-    const requestBody = qs.stringify({
-      grant_type: 'password',
-      username: username,
-      password: password,
-    });
-    console.log('Request body:', requestBody); // Debugging line
-    try {
-      const response = await axios.post(`${baseUrl}/token`, 
-        requestBody, 
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        }
-      );
-
-      console.log('Response:', response); // Debugging line
-
-      if (response.status >= 200 && response.status < 300) {
-        const { access_token, refresh_token, mfa_token, expires_in } = response.data;
-        // Handle tokens as needed
-        // Store tokens for future API calls
-        // Example: AsyncStorage.setItem('accessToken', access_token);
-        return true;
-      } else {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      if (error.response) {
-        console.error('Response data:', error.response.data);
-        console.error('Response status:', error.response.status);
-        console.error('Response headers:', error.response.headers);
-      } else if (error.request) {
-        console.error('Request data:', error.request);
-      } else {
-        console.error('Error message:', error.message);
-      }
-      Alert.alert('Login failed', error.message);
-      return false;
-    }
-  };
-
-  const handleLogin = async () => {
-    if (username && password && url) {
-      const loginSuccess = await loginUser();
-      if (loginSuccess) {
-        if (isServiceProvider) {
-          navigation.replace('ServiceProviderDashboard');
-        } else {
-          navigation.replace('Dashboard');
-        }
->>>>>>> 4543cb6 (Added source code and configuration files)
       }
     } else {
       Alert.alert('Please fill in all fields');
