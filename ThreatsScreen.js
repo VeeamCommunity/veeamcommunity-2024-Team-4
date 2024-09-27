@@ -3,15 +3,20 @@ import { SafeAreaView, StyleSheet, Text, View, ScrollView, TouchableOpacity, Dim
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { PieChart } from "react-native-gifted-charts";
+import qs from 'qs';
 
 const { width } = Dimensions.get('window');
 
 const ThreatsScreen = () => {
   const navigation = useNavigation();
   const [threats, setThreats] = useState([]);
+  const [activeAlarms, setActiveAlarms] = useState([]);
+  const [alarmStats, setAlarmStats] = useState({ Error: 0, Warning: 0, Info: 0, Resolved: 0 });
 
   useEffect(() => {
     fetchThreats();
+    fetchActiveAlarms();
   }, []);
 
   const fetchThreats = async () => {
@@ -63,6 +68,64 @@ const ThreatsScreen = () => {
     }
   };
 
+  const fetchActiveAlarms = async () => {
+    try {
+      const baseUrl = await AsyncStorage.getItem('baseUrl');
+      let accessToken = await AsyncStorage.getItem('accessToken');
+      const refreshToken = await AsyncStorage.getItem('refreshToken');
+      const expiresIn = await AsyncStorage.getItem('expiresIn');
+      const currentTime = new Date().getTime();
+
+      if (currentTime >= parseInt(expiresIn)) {
+        // Token expired, refresh it
+        const response = await axios.post(`${baseUrl}/token`, 
+          qs.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }), 
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+        if (response.status >= 200 && response.status < 300) {
+          accessToken = response.data.access_token;
+          const newExpiresIn = new Date().getTime() + response.data.expires_in * 1000;
+          await AsyncStorage.setItem('accessToken', accessToken);
+          await AsyncStorage.setItem('expiresIn', newExpiresIn.toString());
+        } else {
+          throw new Error('Failed to refresh token');
+        }
+      }
+
+      const response = await axios.get(`${baseUrl}/alarms/active`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (response.status >= 200 && response.status < 300) {
+        setActiveAlarms(response.data.data);
+        calculateAlarmStats(response.data.data);
+      } else {
+        throw new Error('Failed to fetch active alarms');
+      }
+    } catch (error) {
+      console.error('Error fetching active alarms:', error);
+      Alert.alert('Error', 'Failed to fetch active alarms. Please try again later.');
+    }
+  };
+
+  const calculateAlarmStats = (alarms) => {
+    const stats = { Error: 0, Warning: 0, Info: 0, Resolved: 0 };
+    alarms.forEach(alarm => {
+      stats[alarm.lastActivation.status]++;
+    });
+    setAlarmStats(stats);
+  };
+
+  const handleViewAlarmDetails = (alarm) => {
+    Alert.alert(
+      'Alarm Details',
+      `Object Name: ${alarm.object.objectName}\n` +
+      `Status: ${alarm.lastActivation.status}\n` +
+      `Message: ${alarm.lastActivation.message}`,
+      [{ text: 'OK', onPress: () => console.log('OK Pressed') }]
+    );
+  };
+
   const handleViewDetails = (threat) => {
     Alert.alert(
       'Threat Details',
@@ -93,24 +156,64 @@ const ThreatsScreen = () => {
     </View>
   );
 
+  const renderAlarmPieChart = () => {
+    const pieData = [
+      { value: alarmStats.Error || 0, color: '#FF5252', text: 'Error' },
+      { value: alarmStats.Warning || 0, color: '#FFA000', text: 'Warning' },
+      { value: alarmStats.Info || 0, color: '#2196F3', text: 'Info' },
+      { value: alarmStats.Resolved || 0, color: '#4CAF50', text: 'Resolved' },
+    ];
+
+    const totalAlarms = activeAlarms.length;
+
+    return (
+      <View style={styles.chartContainer}>
+        <Text style={styles.chartTitle}>Active Alarms</Text>
+        <View style={styles.chartContent}>
+          <PieChart
+            data={pieData.filter(item => item.value > 0)}
+            donut
+            radius={width * 0.2}
+            innerRadius={width * 0.15}
+            innerCircleColor={'#FFFFFF'}
+            centerLabelComponent={() => (
+              <View style={styles.centerLabel}>
+                <Text style={styles.centerLabelBig}>{totalAlarms}</Text>
+                <Text style={styles.centerLabelSmall}>Total</Text>
+              </View>
+            )}
+          />
+          <View style={styles.legendContainer}>
+            {pieData.map((item, index) => (
+              <View key={index} style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                <Text style={styles.legendText}>{item.text}: {item.value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Threat Dashboard</Text>
-        <TouchableOpacity style={styles.refreshButton} onPress={fetchThreats}>
+        <TouchableOpacity style={styles.refreshButton} onPress={() => { fetchThreats(); fetchActiveAlarms(); }}>
           <Text style={styles.refreshButtonText}>Refresh</Text>
         </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.sectionTitle}>Threat Summary</Text>
         <View style={styles.chartsContainer}>
-          <View style={styles.chartBox}>
-            <View style={styles.pieChart} />
-          </View>
-          <View style={styles.chartBox}>
-            <View style={styles.lineChart} />
-          </View>
+          {renderAlarmPieChart()}
         </View>
+        <TouchableOpacity 
+          style={styles.viewAllButton}
+          onPress={() => navigation.navigate('ActiveAlarms', { alarms: activeAlarms })}
+        >
+          <Text style={styles.viewAllText}>View All Alarms</Text>
+        </TouchableOpacity>
         <Text style={styles.sectionTitle}>Detected Threats</Text>
         <View style={styles.threatsList}>
           {threats.length > 0 ? (
@@ -166,30 +269,76 @@ const styles = StyleSheet.create({
   chartsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginBottom: 16,
   },
-  chartBox: {
-    width: width * 0.45,
-    aspectRatio: 1,
+  chartContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 12,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-  },
-  pieChart: {
     width: '100%',
-    height: '100%',
-    borderRadius: 100,
-    backgroundColor: '#2196F3',
   },
-  lineChart: {
+  chartContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     width: '100%',
-    height: '100%',
-    backgroundColor: '#4CAF50',
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    color: '#333',
+  },
+  legendContainer: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+  },
+  legendText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  centerLabel: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  centerLabelBig: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  centerLabelSmall: {
+    fontSize: 14,
+    color: '#666',
+  },
+  viewAllButton: {
+    backgroundColor: '#004D40',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 4,
+    marginBottom: 24,
+  },
+  viewAllText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   threatsList: {
     backgroundColor: '#FFFFFF',
