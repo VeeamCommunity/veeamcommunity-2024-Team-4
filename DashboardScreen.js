@@ -14,6 +14,15 @@ const DashboardScreen = () => {
   const [jobCounts24h, setJobCounts24h] = useState({ success: 0, failed: 0, warning: 0 });
   const [slaStatus, setSlaStatus] = useState(0);
   const [backupPerformance7d, setBackupPerformance7d] = useState([]);
+  const [storageUsage, setStorageUsage] = useState({ used: 0, total: 0 });
+
+  // Inline bytesToSize function
+  const bytesToSize = (bytes) => {
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Byte';
+    const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+    return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
+  };
 
   useEffect(() => {
     const fetchJobStatuses = async () => {
@@ -122,7 +131,32 @@ const DashboardScreen = () => {
       }
     };
 
+    const fetchStorageUsage = async () => {
+      try {
+        const baseUrl = await AsyncStorage.getItem('baseUrl');
+        const accessToken = await AsyncStorage.getItem('accessToken');
+
+        const response = await axios.get(`${baseUrl}/organizations/companies/sites/backupResources/usage`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (response.status >= 200 && response.status < 300) {
+          const data = response.data.data[0];
+          setStorageUsage({
+            used: data.usedStorageQuota,
+            total: data.storageQuota
+          });
+        } else {
+          throw new Error('Failed to fetch storage usage');
+        }
+      } catch (error) {
+        console.error('Error fetching storage usage:', error);
+        Alert.alert('Error', 'Failed to fetch storage usage. Please try again later.');
+      }
+    };
+
     fetchJobStatuses();
+    fetchStorageUsage();
   }, []);
 
   const renderJobStatus = (job, index) => {
@@ -242,6 +276,26 @@ const DashboardScreen = () => {
     );
   };
 
+  const renderCloudRepositoryStatus = () => {
+    const usedPercentage = (storageUsage.used / storageUsage.total) * 100;
+    const freeSpace = storageUsage.total - storageUsage.used;
+
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Cloud Repository Status</Text>
+        <View style={styles.spaceContainer}>
+          <View style={styles.spaceBar}>
+            <View style={[styles.spaceUsed, { width: `${usedPercentage}%` }]} />
+          </View>
+          <View style={styles.spaceTextContainer}>
+            <Text style={styles.spaceText}>Used: <Text style={styles.usedSpace}>{bytesToSize(storageUsage.used)}</Text></Text>
+            <Text style={styles.spaceText}>Free: <Text style={styles.freeSpace}>{bytesToSize(freeSpace)}</Text></Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -277,18 +331,7 @@ const DashboardScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Cloud Repository Status</Text>
-          <View style={styles.spaceContainer}>
-            <View style={styles.spaceBar}>
-              <View style={[styles.spaceUsed, { width: '30%' }]} />
-            </View>
-            <View style={styles.spaceTextContainer}>
-              <Text style={styles.spaceText}>Used: <Text style={styles.usedSpace}>1.2 TB</Text></Text>
-              <Text style={styles.spaceText}>Free: <Text style={styles.freeSpace}>2.8 TB</Text></Text>
-            </View>
-          </View>
-        </View>
+        {renderCloudRepositoryStatus()}
 
         <View style={styles.buttonContainer}>
           <TouchableOpacity style={styles.actionButton} onPress={handleShowThreatCenter}>
