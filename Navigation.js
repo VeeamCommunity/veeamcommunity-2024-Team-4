@@ -5,8 +5,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import LoginScreen from './LoginScreen';
 import DashboardScreen from './DashboardScreen';
 import ThreatsScreen from './ThreatsScreen';
-import ServiceProviderDashboardScreen from './ServiceProviderDashboardScreen';
 import BillingDashboardScreen from './BillingDashboardScreen';
+import JobDetailsScreen from './JobDetailsScreen';  // Add this line
 
 const Stack = createStackNavigator();
 
@@ -43,20 +43,20 @@ function Navigation() {
           })}
         />
         <Stack.Screen 
-          name="ServiceProviderDashboard" 
-          component={ServiceProviderDashboardScreen} 
+          name="BillingDashboard" 
+          component={BillingDashboardScreen} 
           options={({ navigation }) => ({
-            title: 'Service Provider Dashboard',
+            title: 'Billing Dashboard',
             headerRight: () => <LogoutButton navigation={navigation} />,
             headerStyle: { backgroundColor: '#004D40' },
             headerTintColor: '#fff',
           })}
         />
         <Stack.Screen 
-          name="BillingDashboard" 
-          component={BillingDashboardScreen} 
+          name="JobDetails" 
+          component={JobDetailsScreen} 
           options={({ navigation }) => ({
-            title: 'Billing Dashboard',
+            title: 'Job Details',
             headerRight: () => <LogoutButton navigation={navigation} />,
             headerStyle: { backgroundColor: '#004D40' },
             headerTintColor: '#fff',

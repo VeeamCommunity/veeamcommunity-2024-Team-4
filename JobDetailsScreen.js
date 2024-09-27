@@ -12,18 +12,18 @@ const JobDetailsScreen = () => {
     const isRecent = (currentTime - lastRunTime) / (1000 * 60 * 60) < 24; // within 24 hours
     let statusColor = 'gray';
 
-    if (job.status === 'Success') {
+    if (job.status === 'Success' || job.lastStatus === 'Success') {
       statusColor = 'green';
-    } else if (job.status === 'Warning') {
+    } else if (job.status === 'Warning' || job.lastStatus === 'Warning') {
       statusColor = 'yellow';
-    } else if (job.status === 'Failed') {
+    } else if (job.status === 'Failed' || job.lastStatus === 'Failed') {
       statusColor = 'red';
     }
 
     return (
       <View key={index} style={styles.jobStatusContainer}>
         <Text style={[styles.jobStatusText, { color: statusColor }]}>
-          {job.name}: {job.status} {isRecent ? '(Recent)' : ''}
+          {job.name}: {job.status || job.lastStatus} {isRecent ? '(Recent)' : ''}
         </Text>
         <Text style={styles.jobStatusSubText}>Last Run: {lastRunTime.toLocaleString()}</Text>
       </View>

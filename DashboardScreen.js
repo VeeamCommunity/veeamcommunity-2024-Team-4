@@ -1,15 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View, ScrollView, TouchableOpacity, useWindowDimensions, Alert } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import qs from 'qs';
+import { BarChart } from 'react-native-chart-kit';
+import { Dimensions } from 'react-native';
+
+const screenWidth = Dimensions.get('window').width;
 
 const DashboardScreen = () => {
   const navigation = useNavigation();
-  const { width: screenWidth } = useWindowDimensions();
   const [jobStatuses, setJobStatuses] = useState([]);
   const [jobCounts, setJobCounts] = useState({ success: 0, failed: 0, warning: 0 });
+  const [slaStatus, setSlaStatus] = useState(0);
 
   useEffect(() => {
     const fetchJobStatuses = async () => {
@@ -36,31 +40,48 @@ const DashboardScreen = () => {
           }
         }
 
-        const jobResponse = await axios.get(`${baseUrl}/infrastructure/backupServers/jobs`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
+        const [jobResponse, agentJobResponse, vb365JobResponse] = await Promise.all([
+          axios.get(`${baseUrl}/infrastructure/backupServers/jobs`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          }),
+          axios.get(`${baseUrl}/infrastructure/backupAgents/jobs`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          }),
+          axios.get(`${baseUrl}/infrastructure/vb365Servers/organizations/jobs`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          })
+        ]);
 
-        if (jobResponse.status >= 200 && jobResponse.status < 300) {
+        if (jobResponse.status >= 200 && jobResponse.status < 300 && agentJobResponse.status >= 200 && agentJobResponse.status < 300 && vb365JobResponse.status >= 200 && vb365JobResponse.status < 300) {
           const jobs = jobResponse.data.data;
-          setJobStatuses(jobs);
+          const agentJobs = agentJobResponse.data.data;
+          const vb365Jobs = vb365JobResponse.data.data;
+          const allJobs = [...jobs, ...agentJobs, ...vb365Jobs];
+          setJobStatuses(allJobs);
 
           // Calculate job counts
           const counts = { success: 0, failed: 0, warning: 0 };
           const currentTime = new Date();
-          jobs.forEach(job => {
+          allJobs.forEach(job => {
             const lastRunTime = new Date(job.lastRun);
             const isRecent = (currentTime - lastRunTime) / (1000 * 60 * 60) < 24; // within 24 hours
             if (isRecent) {
-              if (job.status === 'Success') {
+              if (job.status === 'Success' || job.lastStatus === 'Success') {
                 counts.success += 1;
-              } else if (job.status === 'Warning') {
+              } else if (job.status === 'Warning' || job.lastStatus === 'Warning') {
                 counts.warning += 1;
-              } else if (job.status === 'Failed') {
+              } else if (job.status === 'Failed' || job.lastStatus === 'Failed') {
                 counts.failed += 1;
               }
             }
           });
           setJobCounts(counts);
+
+          // Calculate SLA status
+          const totalJobs = counts.success + counts.warning + counts.failed;
+          const successfulJobs = counts.success + counts.warning;
+          const sla = totalJobs > 0 ? (successfulJobs / totalJobs) * 100 : 0;
+          setSlaStatus(sla.toFixed(2));
         } else {
           throw new Error('Failed to fetch job statuses');
         }
@@ -79,18 +100,18 @@ const DashboardScreen = () => {
     const isRecent = (currentTime - lastRunTime) / (1000 * 60 * 60) < 24; // within 24 hours
     let statusColor = 'gray';
 
-    if (job.status === 'Success') {
+    if (job.status === 'Success' || job.lastStatus === 'Success') {
       statusColor = 'green';
-    } else if (job.status === 'Warning') {
+    } else if (job.status === 'Warning' || job.lastStatus === 'Warning') {
       statusColor = 'yellow';
-    } else if (job.status === 'Failed') {
+    } else if (job.status === 'Failed' || job.lastStatus === 'Failed') {
       statusColor = 'red';
     }
 
     return (
       <View key={index} style={styles.jobStatusContainer}>
         <Text style={[styles.jobStatusText, { color: statusColor }]}>
-          {job.name}: {job.status} {isRecent ? '(Recent)' : ''}
+          {job.name}: {job.status || job.lastStatus} {isRecent ? '(Recent)' : ''}
         </Text>
         <Text style={styles.jobStatusSubText}>Last Run: {lastRunTime.toLocaleString()}</Text>
       </View>
@@ -102,11 +123,28 @@ const DashboardScreen = () => {
   };
 
   const handleShowThreatCenter = () => {
-    navigation.navigate('Threats');
+    navigation.navigate('Threats');  // Changed from 'ThreatCenter' to 'Threats'
   };
 
   const handleShowBillingDashboard = () => {
     navigation.navigate('BillingDashboard');
+  };
+
+  const data = {
+    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+    datasets: [
+      {
+        data: [20, 45, 28, 80, 99, 43],
+        colors: [
+          (opacity = 1) => `rgba(255, 0, 0, ${opacity})`, // Red
+          (opacity = 1) => `rgba(0, 255, 0, ${opacity})`, // Green
+          (opacity = 1) => `rgba(255, 255, 0, ${opacity})`, // Yellow
+          (opacity = 1) => `rgba(0, 255, 0, ${opacity})`, // Green
+          (opacity = 1) => `rgba(255, 0, 0, ${opacity})`, // Red
+          (opacity = 1) => `rgba(0, 255, 0, ${opacity})`, // Green
+        ],
+      },
+    ],
   };
 
   return (
@@ -114,15 +152,40 @@ const DashboardScreen = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Backup Performance (Last 6 Months)</Text>
-          <View style={styles.chartContainer}>
-            {/* Render your chart here */}
-          </View>
+          <BarChart
+            data={data}
+            width={screenWidth - 32}
+            height={220}
+            chartConfig={{
+              backgroundColor: '#fff',
+              backgroundGradientFrom: '#fff',
+              backgroundGradientTo: '#fff',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+              style: {
+                borderRadius: 16,
+              },
+              propsForDots: {
+                r: '6',
+                strokeWidth: '2',
+                stroke: '#ffa726',
+              },
+            }}
+            style={{
+              marginVertical: 8,
+              borderRadius: 16,
+            }}
+            fromZero
+            showBarTops={false}
+            showValuesOnTopOfBars
+          />
         </View>
 
         <View style={styles.row}>
           <View style={[styles.card, styles.halfCard]}>
             <Text style={styles.cardTitle}>SLA Status</Text>
-            <Text style={styles.slaText}>98.5%</Text>
+            <Text style={styles.slaText}>{slaStatus}%</Text>
             <Text style={styles.slaSubtext}>Current compliance</Text>
           </View>
           <TouchableOpacity style={[styles.card, styles.halfCard]} onPress={handleShowJobDetails}>
@@ -263,5 +326,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 });
+
 
 export default DashboardScreen;
