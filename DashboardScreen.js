@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import qs from 'qs';
-import { BarChart } from 'react-native-chart-kit';
-import { Dimensions } from 'react-native';
+import { BarChart } from "react-native-gifted-charts";
 
 const screenWidth = Dimensions.get('window').width;
 
 const DashboardScreen = () => {
   const navigation = useNavigation();
   const [jobStatuses, setJobStatuses] = useState([]);
-  const [jobCounts, setJobCounts] = useState({ success: 0, failed: 0, warning: 0 });
+  const [jobCounts24h, setJobCounts24h] = useState({ success: 0, failed: 0, warning: 0 });
   const [slaStatus, setSlaStatus] = useState(0);
+  const [backupPerformance7d, setBackupPerformance7d] = useState([]);
 
   useEffect(() => {
     const fetchJobStatuses = async () => {
@@ -59,27 +59,58 @@ const DashboardScreen = () => {
           const allJobs = [...jobs, ...agentJobs, ...vb365Jobs];
           setJobStatuses(allJobs);
 
-          // Calculate job counts
-          const counts = { success: 0, failed: 0, warning: 0 };
-          const currentTime = new Date();
+          const counts24h = { success: 0, warning: 0, failed: 0 };
+          const performanceData7d = {};
+
+          const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+          const sevenDaysAgo = new Date(currentTime - 7 * 24 * 60 * 60 * 1000);
+
           allJobs.forEach(job => {
             const lastRunTime = new Date(job.lastRun);
-            const isRecent = (currentTime - lastRunTime) / (1000 * 60 * 60) < 24; // within 24 hours
-            if (isRecent) {
+            
+            // Last 24 hours job counts
+            if (lastRunTime >= twentyFourHoursAgo) {
               if (job.status === 'Success' || job.lastStatus === 'Success') {
-                counts.success += 1;
+                counts24h.success += 1;
               } else if (job.status === 'Warning' || job.lastStatus === 'Warning') {
-                counts.warning += 1;
+                counts24h.warning += 1;
               } else if (job.status === 'Failed' || job.lastStatus === 'Failed') {
-                counts.failed += 1;
+                counts24h.failed += 1;
+              }
+            }
+
+            // Last 7 days performance data
+            if (lastRunTime >= sevenDaysAgo) {
+              const dayKey = lastRunTime.toISOString().split('T')[0];
+              if (!performanceData7d[dayKey]) {
+                performanceData7d[dayKey] = { success: 0, warning: 0, failed: 0 };
+              }
+              if (job.status === 'Success' || job.lastStatus === 'Success') {
+                performanceData7d[dayKey].success += 1;
+              } else if (job.status === 'Warning' || job.lastStatus === 'Warning') {
+                performanceData7d[dayKey].warning += 1;
+              } else if (job.status === 'Failed' || job.lastStatus === 'Failed') {
+                performanceData7d[dayKey].failed += 1;
               }
             }
           });
-          setJobCounts(counts);
+
+          setJobCounts24h(counts24h);
+
+          const stackData = Object.entries(performanceData7d).map(([date, data]) => ({
+            stacks: [
+              { value: data.success, color: 'green' },
+              { value: data.warning, color: 'orange', marginBottom: 2 },
+              { value: data.failed, color: 'red', marginBottom: 2 },
+            ],
+            label: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
+          }));
+
+          setBackupPerformance7d(stackData);
 
           // Calculate SLA status
-          const totalJobs = counts.success + counts.warning + counts.failed;
-          const successfulJobs = counts.success + counts.warning;
+          const totalJobs = counts24h.success + counts24h.warning + counts24h.failed;
+          const successfulJobs = counts24h.success + counts24h.warning;
           const sla = totalJobs > 0 ? (successfulJobs / totalJobs) * 100 : 0;
           setSlaStatus(sla.toFixed(2));
         } else {
@@ -87,7 +118,7 @@ const DashboardScreen = () => {
         }
       } catch (error) {
         console.error('Error fetching job statuses:', error);
-        Alert.alert('Error', 'Failed to fetch job statuses');
+        Alert.alert('Error', 'Failed to fetch job statuses. Please try again later.');
       }
     };
 
@@ -103,7 +134,7 @@ const DashboardScreen = () => {
     if (job.status === 'Success' || job.lastStatus === 'Success') {
       statusColor = 'green';
     } else if (job.status === 'Warning' || job.lastStatus === 'Warning') {
-      statusColor = 'yellow';
+      statusColor = 'orange';
     } else if (job.status === 'Failed' || job.lastStatus === 'Failed') {
       statusColor = 'red';
     }
@@ -130,56 +161,71 @@ const DashboardScreen = () => {
     navigation.navigate('BillingDashboard');
   };
 
-  const data = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    datasets: [
-      {
-        data: [20, 45, 28, 80, 99, 43],
-        colors: [
-          (opacity = 1) => `rgba(255, 0, 0, ${opacity})`, // Red
-          (opacity = 1) => `rgba(0, 255, 0, ${opacity})`, // Green
-          (opacity = 1) => `rgba(255, 255, 0, ${opacity})`, // Yellow
-          (opacity = 1) => `rgba(0, 255, 0, ${opacity})`, // Green
-          (opacity = 1) => `rgba(255, 0, 0, ${opacity})`, // Red
-          (opacity = 1) => `rgba(0, 255, 0, ${opacity})`, // Green
+  const renderBarChart = () => {
+    if (backupPerformance7d.length === 0) {
+      return <Text>No data available for chart</Text>;
+    }
+
+    try {
+      const stackData = backupPerformance7d.map(item => ({
+        stacks: [
+          { value: Number(item.stacks[0].value) || 0, color: 'green' },
+          { value: Number(item.stacks[1].value) || 0, color: 'orange', marginBottom: 2 },
+          { value: Number(item.stacks[2].value) || 0, color: 'red', marginBottom: 2 },
         ],
-      },
-    ],
+        label: item.label,
+      }));
+
+      const maxValue = Math.max(...stackData.map(item => 
+        item.stacks.reduce((sum, stack) => sum + stack.value, 0)
+      ));
+
+      return (
+        <BarChart
+          width={screenWidth - 64}
+          height={220}
+          barWidth={32}
+          spacing={20}
+          noOfSections={5}
+          maxValue={maxValue > 0 ? maxValue : 1}
+          stackData={stackData}
+          barBorderRadius={4}
+          yAxisThickness={0}
+          xAxisThickness={0}
+          yAxisTextStyle={{ color: '#333' }}
+          xAxisLabelTextStyle={{ color: '#333', textAlign: 'center' }}
+          yAxisLabelTexts={['0', '25', '50', '75', '100']}
+          labelWidth={40}
+          xAxisLabelWidth={40}
+          rotateLabel
+        />
+      );
+    } catch (error) {
+      console.error('Error rendering BarChart:', error);
+      return <Text>Error rendering chart</Text>;
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Backup Performance (Last 6 Months)</Text>
-          <BarChart
-            data={data}
-            width={screenWidth - 32}
-            height={220}
-            chartConfig={{
-              backgroundColor: '#fff',
-              backgroundGradientFrom: '#fff',
-              backgroundGradientTo: '#fff',
-              decimalPlaces: 0,
-              color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-              style: {
-                borderRadius: 16,
-              },
-              propsForDots: {
-                r: '6',
-                strokeWidth: '2',
-                stroke: '#ffa726',
-              },
-            }}
-            style={{
-              marginVertical: 8,
-              borderRadius: 16,
-            }}
-            fromZero
-            showBarTops={false}
-            showValuesOnTopOfBars
-          />
+          <Text style={styles.cardTitle}>Backup Performance (Last 7 Days)</Text>
+          {renderBarChart()}
+          <View style={styles.legendContainer}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: 'green' }]} />
+              <Text style={styles.legendText}>Success</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: 'orange' }]} />
+              <Text style={styles.legendText}>Warning</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: 'red' }]} />
+              <Text style={styles.legendText}>Failed</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.row}>
@@ -189,15 +235,15 @@ const DashboardScreen = () => {
             <Text style={styles.slaSubtext}>Current compliance</Text>
           </View>
           <TouchableOpacity style={[styles.card, styles.halfCard]} onPress={handleShowJobDetails}>
-            <Text style={styles.cardTitle}>Job Statuses</Text>
-            <Text style={[styles.jobCountText, { color: 'green' }]}>Success: {jobCounts.success}</Text>
-            <Text style={[styles.jobCountText, { color: 'yellow' }]}>Warning: {jobCounts.warning}</Text>
-            <Text style={[styles.jobCountText, { color: 'red' }]}>Failed: {jobCounts.failed}</Text>
+            <Text style={styles.cardTitle}>Job Status 24Hrs</Text>
+            <Text style={[styles.jobCountText, { color: 'green' }]}>Success: {jobCounts24h.success}</Text>
+            <Text style={[styles.jobCountText, { color: 'orange' }]}>Warning: {jobCounts24h.warning}</Text>
+            <Text style={[styles.jobCountText, { color: 'red' }]}>Failed: {jobCounts24h.failed}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Backup Repository Status</Text>
+          <Text style={styles.cardTitle}>Cloud Repository Status</Text>
           <View style={styles.spaceContainer}>
             <View style={styles.spaceBar}>
               <View style={[styles.spaceUsed, { width: '30%' }]} />
@@ -324,6 +370,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 4,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 4,
+  },
+  legendText: {
+    fontSize: 12,
+    color: '#333',
+  },
+  tooltip: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: 8,
+    borderRadius: 4,
+  },
+  tooltipText: {
+    color: 'white',
+    fontSize: 12,
   },
 });
 
