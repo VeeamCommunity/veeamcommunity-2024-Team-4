@@ -1,31 +1,82 @@
-import React from 'react';
-import { SafeAreaView, StyleSheet, Text, View, ScrollView, Dimensions } from 'react-native';
-
-console.log('BillingDashboardScreen - Start of file');
-
-const getDimensions = () => {
-  try {
-    console.log('BillingDashboardScreen - Before Dimensions.get');
-    const dimensionsObj = Dimensions.get('window');
-    console.log('BillingDashboardScreen - Dimensions.get("window"):', JSON.stringify(dimensionsObj));
-    const { width } = dimensionsObj;
-    console.log('BillingDashboardScreen - After Dimensions.get, width:', width);
-    return { width };
-  } catch (error) {
-    console.error('BillingDashboardScreen - Error getting dimensions:', error);
-    return { width: 0 };
-  }
-};
-
-const { width } = getDimensions();
+import React, { useEffect, useState } from 'react';
+import { SafeAreaView, StyleSheet, Text, View, ScrollView, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 const BillingDashboardScreen = () => {
-  console.log('BillingDashboardScreen - Component rendering');
-  // Mock data
-  const storageQuota = { used: 750, total: 1000 }; // GB
-  const licensesUsed = 45;
-  const totalLicenses = 50;
-  const monthlyBilling = [1200, 1350, 1500, 1400, 1600, 1550]; // Last 6 months
+  const [storageUsage, setStorageUsage] = useState({ used: 0, total: 0 });
+  const [licenseUsage, setLicenseUsage] = useState({ server: 0, workstation: 0, vm: 0 });
+  const [monthlyBilling, setMonthlyBilling] = useState([1200, 1350, 1500, 1400, 1600, 1550]); // Placeholder data
+
+  useEffect(() => {
+    fetchUsageData();
+  }, []);
+
+  const fetchUsageData = async () => {
+    try {
+      const baseUrl = await AsyncStorage.getItem('baseUrl');
+      const accessToken = await AsyncStorage.getItem('accessToken');
+
+      const response = await axios.get(`${baseUrl}/organizations/companies/sites/backupResources/usage`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (response.status >= 200 && response.status < 300) {
+        const data = response.data.data[0];
+        setStorageUsage({
+          used: data.usedStorageQuota,
+          total: data.storageQuota
+        });
+        setLicenseUsage({
+          server: data.serverBackups,
+          workstation: data.workstationBackups,
+          vm: data.vmBackups
+        });
+      } else {
+        throw new Error('Failed to fetch usage data');
+      }
+    } catch (error) {
+      console.error('Error fetching usage data:', error);
+      Alert.alert('Error', 'Failed to fetch usage data. Please try again later.');
+    }
+  };
+
+  const bytesToSize = (bytes) => {
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Byte';
+    const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+    return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
+  };
+
+  const renderStorageQuotaUsage = () => {
+    const usedPercentage = (storageUsage.used / storageUsage.total) * 100;
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Storage Quota Usage</Text>
+        <View style={styles.quotaBar}>
+          <View style={[styles.quotaUsed, { width: `${usedPercentage}%` }]} />
+        </View>
+        <Text style={styles.quotaText}>
+          {bytesToSize(storageUsage.used)} / {bytesToSize(storageUsage.total)} Used
+        </Text>
+      </View>
+    );
+  };
+
+  const renderLicensesUsage = () => {
+    const totalLicenses = licenseUsage.server + licenseUsage.workstation + licenseUsage.vm;
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Licenses Usage</Text>
+        <View style={styles.licenseContainer}>
+          <Text style={styles.licenseText}>Server Backups: {licenseUsage.server}</Text>
+          <Text style={styles.licenseText}>Workstation Backups: {licenseUsage.workstation}</Text>
+          <Text style={styles.licenseText}>VM Backups: {licenseUsage.vm}</Text>
+          <Text style={styles.licenseTotalText}>Total Licenses: {totalLicenses}</Text>
+        </View>
+      </View>
+    );
+  };
 
   const renderBarChart = (data, maxValue) => {
     return (
@@ -45,27 +96,8 @@ const BillingDashboardScreen = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>Billing Dashboard</Text>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Storage Quota Usage</Text>
-          <View style={styles.quotaBar}>
-            <View style={[styles.quotaUsed, { width: `${(storageQuota.used / storageQuota.total) * 100}%` }]} />
-          </View>
-          <Text style={styles.quotaText}>
-            {storageQuota.used} GB / {storageQuota.total} GB Used
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Licenses Usage</Text>
-          <View style={styles.licenseContainer}>
-            <View style={styles.licenseBar}>
-              <View style={[styles.licenseUsed, { width: `${(licensesUsed / totalLicenses) * 100}%` }]} />
-            </View>
-            <Text style={styles.licenseText}>
-              {licensesUsed} / {totalLicenses} Licenses Used
-            </Text>
-          </View>
-        </View>
+        {renderStorageQuotaUsage()}
+        {renderLicensesUsage()}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Monthly Billing (Last 6 Months)</Text>
@@ -75,8 +107,6 @@ const BillingDashboardScreen = () => {
     </SafeAreaView>
   );
 };
-
-console.log('BillingDashboardScreen - End of file');
 
 const styles = StyleSheet.create({
   container: {
@@ -125,22 +155,18 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   licenseContainer: {
-    alignItems: 'center',
-  },
-  licenseBar: {
-    width: '100%',
-    height: 20,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  licenseUsed: {
-    height: '100%',
-    backgroundColor: '#004D40',
+    marginTop: 8,
   },
   licenseText: {
-    marginTop: 8,
+    fontSize: 14,
     color: '#666',
+    marginBottom: 4,
+  },
+  licenseTotalText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#004D40',
+    marginTop: 8,
   },
   barChart: {
     flexDirection: 'row',
