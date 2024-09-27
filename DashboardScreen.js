@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import qs from 'qs';
-import { BarChart } from "react-native-gifted-charts";
+import { BarChart, PieChart } from "react-native-gifted-charts";
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -206,6 +206,42 @@ const DashboardScreen = () => {
     }
   };
 
+  const renderSLAChart = () => {
+    const slaValue = parseFloat(slaStatus);
+    let color;
+    if (slaValue >= 70) {
+      color = 'green';  // Same green as used in the bar chart
+    } else if (slaValue >= 50) {
+      color = 'orange';
+    } else {
+      color = 'red';
+    }
+
+    const pieData = [
+      { value: slaValue, color: color },
+      { value: 100 - slaValue, color: 'lightgray' }
+    ];
+
+    return (
+      <View style={styles.slaChartContainer}>
+        <PieChart
+          donut
+          innerRadius={60}
+          radius={80}
+          data={pieData}
+          centerLabelComponent={() => {
+            return (
+              <View style={styles.slaCenterLabel}>
+                <Text style={[styles.slaPercentage, { color: color }]}>{slaStatus}%</Text>
+                <Text style={styles.slaSubtext}>Current compliance</Text>
+              </View>
+            );
+          }}
+        />
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -231,8 +267,7 @@ const DashboardScreen = () => {
         <View style={styles.row}>
           <View style={[styles.card, styles.halfCard]}>
             <Text style={styles.cardTitle}>SLA Status</Text>
-            <Text style={styles.slaText}>{slaStatus}%</Text>
-            <Text style={styles.slaSubtext}>Current compliance</Text>
+            {renderSLAChart()}
           </View>
           <TouchableOpacity style={[styles.card, styles.halfCard]} onPress={handleShowJobDetails}>
             <Text style={styles.cardTitle}>Job Status 24Hrs</Text>
@@ -399,6 +434,24 @@ const styles = StyleSheet.create({
   tooltipText: {
     color: 'white',
     fontSize: 12,
+  },
+  slaChartContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 180,
+  },
+  slaCenterLabel: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  slaPercentage: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  slaSubtext: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
   },
 });
 
