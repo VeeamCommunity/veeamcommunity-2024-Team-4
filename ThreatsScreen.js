@@ -116,16 +116,6 @@ const ThreatsScreen = () => {
     setAlarmStats(stats);
   };
 
-  const handleViewAlarmDetails = (alarm) => {
-    Alert.alert(
-      'Alarm Details',
-      `Object Name: ${alarm.object.objectName}\n` +
-      `Status: ${alarm.lastActivation.status}\n` +
-      `Message: ${alarm.lastActivation.message}`,
-      [{ text: 'OK', onPress: () => console.log('OK Pressed') }]
-    );
-  };
-
   const handleViewDetails = (threat) => {
     Alert.alert(
       'Threat Details',
@@ -167,7 +157,10 @@ const ThreatsScreen = () => {
     const totalAlarms = activeAlarms.length;
 
     return (
-      <View style={styles.chartContainer}>
+      <TouchableOpacity 
+        style={styles.chartContainer}
+        onPress={() => navigation.navigate('ActiveAlarms', { alarms: activeAlarms })}
+      >
         <Text style={styles.chartTitle}>Active Alarms</Text>
         <View style={styles.chartContent}>
           <PieChart
@@ -192,7 +185,7 @@ const ThreatsScreen = () => {
             ))}
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -208,12 +201,6 @@ const ThreatsScreen = () => {
         <View style={styles.chartsContainer}>
           {renderAlarmPieChart()}
         </View>
-        <TouchableOpacity 
-          style={styles.viewAllButton}
-          onPress={() => navigation.navigate('ActiveAlarms', { alarms: activeAlarms })}
-        >
-          <Text style={styles.viewAllText}>View All Alarms</Text>
-        </TouchableOpacity>
         <Text style={styles.sectionTitle}>Detected Threats</Text>
         <View style={styles.threatsList}>
           {threats.length > 0 ? (
@@ -326,19 +313,6 @@ const styles = StyleSheet.create({
   centerLabelSmall: {
     fontSize: 14,
     color: '#666',
-  },
-  viewAllButton: {
-    backgroundColor: '#004D40',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 4,
-    marginBottom: 24,
-  },
-  viewAllText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
   },
   threatsList: {
     backgroundColor: '#FFFFFF',

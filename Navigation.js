@@ -7,6 +7,7 @@ import DashboardScreen from './DashboardScreen';
 import ThreatsScreen from './ThreatsScreen';
 import BillingDashboardScreen from './BillingDashboardScreen';
 import JobDetailsScreen from './JobDetailsScreen';  // Add this line
+import ActiveAlarmsScreen from './ActiveAlarmsScreen';  // Add this line
 
 const Stack = createStackNavigator();
 
@@ -57,6 +58,16 @@ function Navigation() {
           component={JobDetailsScreen} 
           options={({ navigation }) => ({
             title: 'Job Details',
+            headerRight: () => <LogoutButton navigation={navigation} />,
+            headerStyle: { backgroundColor: '#004D40' },
+            headerTintColor: '#fff',
+          })}
+        />
+        <Stack.Screen 
+          name="ActiveAlarms" 
+          component={ActiveAlarmsScreen} 
+          options={({ navigation }) => ({
+            title: 'Active Alarms',
             headerRight: () => <LogoutButton navigation={navigation} />,
             headerStyle: { backgroundColor: '#004D40' },
             headerTintColor: '#fff',
