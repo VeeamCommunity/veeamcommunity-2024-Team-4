@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View, ScrollView, Alert } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View, ScrollView, Alert, TouchableOpacity, Dimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { BarChart, PieChart } from 'react-native-gifted-charts';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+
+const { width } = Dimensions.get('window');
 
 const BillingDashboardScreen = () => {
-  const [storageUsage, setStorageUsage] = useState({ used: 0, total: 0 });
-  const [licenseUsage, setLicenseUsage] = useState({ server: 0, workstation: 0, vm: 0 });
-  const [monthlyBilling, setMonthlyBilling] = useState([1200, 1350, 1500, 1400, 1600, 1550]); // Placeholder data
+  const [usageData, setUsageData] = useState(null);
+  const [expandedCards, setExpandedCards] = useState({});
 
   useEffect(() => {
     fetchUsageData();
@@ -17,76 +20,266 @@ const BillingDashboardScreen = () => {
       const baseUrl = await AsyncStorage.getItem('baseUrl');
       const accessToken = await AsyncStorage.getItem('accessToken');
 
-      const response = await axios.get(`${baseUrl}/organizations/companies/sites/backupResources/usage`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const headers = { Authorization: `Bearer ${accessToken}` };
 
-      if (response.status >= 200 && response.status < 300) {
-        const data = response.data.data[0];
-        setStorageUsage({
-          used: data.usedStorageQuota,
-          total: data.storageQuota
-        });
-        setLicenseUsage({
-          server: data.serverBackups,
-          workstation: data.workstationBackups,
-          vm: data.vmBackups
-        });
-      } else {
-        throw new Error('Failed to fetch usage data');
-      }
+      const usageResponse = await axios.get(`${baseUrl}/organizations/companies/usage`, { headers });
+      setUsageData(processUsageData(usageResponse.data.data[0].counters));
     } catch (error) {
       console.error('Error fetching usage data:', error);
       Alert.alert('Error', 'Failed to fetch usage data. Please try again later.');
     }
   };
 
+  const processUsageData = (counters) => {
+    return {
+      backups: {
+        vm: findCounterValue(counters, 'VmCloudBackups'),
+        server: findCounterValue(counters, 'ServerCloudBackups'),
+        workstation: findCounterValue(counters, 'WorkstationCloudBackups'),
+      },
+      dataTransfer: {
+        agentIn: findCounterValue(counters, 'AgentCloudBackupDataTransferIn'),
+        agentOut: findCounterValue(counters, 'AgentCloudBackupDataTransferOut'),
+        vbrIn: findCounterValue(counters, 'VbrCloudBackupsDataTransferIn'),
+        vbrOut: findCounterValue(counters, 'VbrCloudBackupsDataTransferOut'),
+      },
+      cloudReplicas: {
+        count: findCounterValue(counters, 'VmCloudReplicas'),
+        computeTime: findCounterValue(counters, 'VmCloudReplicaComputeTime'),
+        storageUsage: findCounterValue(counters, 'VmCloudReplicaStorageUsage'),
+        dataIn: findCounterValue(counters, 'VbrCloudReplicaDataTransferIn'),
+        dataOut: findCounterValue(counters, 'VbrCloudReplicaDataTransferOut'),
+      },
+      cloudRepositoryUsage: {
+        vm: findCounterValue(counters, 'CloudRepositoryUsageByVm'),
+        serverAgent: findCounterValue(counters, 'CloudRepositoryUsageByServerAgent'),
+        workstationAgent: findCounterValue(counters, 'CloudRepositoryUsageByWorkstationAgent'),
+      },
+      managedResources: {
+        serverAgents: findCounterValue(counters, 'ManagedServerAgents'),
+        workstationAgents: findCounterValue(counters, 'ManagedWorkstationAgents'),
+        vms: findCounterValue(counters, 'ManagedVms'),
+        cloudVms: findCounterValue(counters, 'ManagedCloudVms'),
+      },
+      fileShares: {
+        archiveSize: findCounterValue(counters, 'FileShareArchiveSize'),
+        backupSize: findCounterValue(counters, 'FileShareBackupSize'),
+        sourceSize: findCounterValue(counters, 'FileShareSourceSize'),
+        protected: findCounterValue(counters, 'ProtectedFileShares'),
+      },
+      objectStorage: {
+        archiveSize: findCounterValue(counters, 'ObjectStorageArchiveSize'),
+        backupSize: findCounterValue(counters, 'ObjectStorageBackupSize'),
+        sourceSize: findCounterValue(counters, 'ObjectStorageSourceSize'),
+        protected: findCounterValue(counters, 'ProtectedObjectStorages'),
+      },
+      cloudStorage: {
+        total: findCounterValue(counters, 'CloudTotalUsage'),
+        regular: findCounterValue(counters, 'CloudRegularStorageUsage'),
+        object: findCounterValue(counters, 'CloudObjectStorageUsage'),
+      },
+      vms: {
+        replicated: findCounterValue(counters, 'ReplicatedVms'),
+        backedUp: findCounterValue(counters, 'BackedupVms'),
+      },
+      o365: {
+        archiveSize: findCounterValue(counters, 'Vb365ArchiveSize'),
+        backupSize: findCounterValue(counters, 'Vb365BackupSize'),
+        protectedGroups: findCounterValue(counters, 'Vb365ProtectedGroups'),
+        protectedSites: findCounterValue(counters, 'Vb365ProtectedSites'),
+        protectedTeams: findCounterValue(counters, 'Vb365ProtectedTeams'),
+        protectedUsers: findCounterValue(counters, 'Vb365ProtectedUsers'),
+      },
+    };
+  };
+
+  const findCounterValue = (counters, type) => {
+    const counter = counters.find(c => c.type === type);
+    return counter ? counter.value : 0;
+  };
+
   const bytesToSize = (bytes) => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    if (bytes === 0) return '0 Byte';
+    if (bytes === 0) return '0 Bytes';
     const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
     return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
   };
 
-  const renderStorageQuotaUsage = () => {
-    const usedPercentage = (storageUsage.used / storageUsage.total) * 100;
+  const toggleCard = (cardName) => {
+    setExpandedCards(prev => ({ ...prev, [cardName]: !prev[cardName] }));
+  };
+
+  const renderCard = (title, content, cardName) => {
+    const isExpanded = expandedCards[cardName];
     return (
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Storage Quota Usage</Text>
-        <View style={styles.quotaBar}>
-          <View style={[styles.quotaUsed, { width: `${usedPercentage}%` }]} />
+      <TouchableOpacity style={styles.card} onPress={() => toggleCard(cardName)}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          <Icon name={isExpanded ? 'expand-less' : 'expand-more'} size={24} color="#004D40" />
         </View>
-        <Text style={styles.quotaText}>
-          {bytesToSize(storageUsage.used)} / {bytesToSize(storageUsage.total)} Used
-        </Text>
+        {isExpanded && content}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderBackupsChart = () => {
+    if (!usageData) return null;
+    const data = [
+      { value: usageData.backups.vm, label: 'VM', frontColor: '#177AD5' },
+      { value: usageData.backups.server, label: 'Server', frontColor: '#79D2DE' },
+      { value: usageData.backups.workstation, label: 'Workstation', frontColor: '#F5A623' },
+    ];
+
+    return (
+      <View>
+        <Text style={styles.chartTitle}>Cloud Backups</Text>
+        <BarChart
+          data={data}
+          width={width - 64}
+          height={200}
+          barWidth={40}
+          spacing={20}
+          roundedTop
+          roundedBottom
+          hideRules
+          xAxisThickness={0}
+          yAxisThickness={0}
+          yAxisTextStyle={{ color: '#333' }}
+          noOfSections={3}
+          maxValue={Math.max(...data.map(item => item.value), 10)}
+          labelWidth={40}
+          backgroundColor="#fff"
+        />
       </View>
     );
   };
 
-  const renderLicensesUsage = () => {
-    const totalLicenses = licenseUsage.server + licenseUsage.workstation + licenseUsage.vm;
+  const renderCloudStorageUsageChart = () => {
+    if (!usageData) return null;
+    const data = [
+      { value: usageData.cloudStorage.regular, label: 'Regular', color: '#177AD5' },
+      { value: usageData.cloudStorage.object, label: 'Object', color: '#79D2DE' },
+    ];
+
     return (
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Licenses Usage</Text>
-        <View style={styles.licenseContainer}>
-          <Text style={styles.licenseText}>Server Backups: {licenseUsage.server}</Text>
-          <Text style={styles.licenseText}>Workstation Backups: {licenseUsage.workstation}</Text>
-          <Text style={styles.licenseText}>VM Backups: {licenseUsage.vm}</Text>
-          <Text style={styles.licenseTotalText}>Total Licenses: {totalLicenses}</Text>
+      <View>
+        <Text style={styles.chartTitle}>Cloud Storage Usage</Text>
+        <PieChart
+          data={data}
+          width={width - 64}
+          height={200}
+          innerRadius={60}
+          centerLabelComponent={() => (
+            <View style={styles.centerLabel}>
+              <Text style={styles.centerLabelText}>{bytesToSize(usageData.cloudStorage.total)}</Text>
+              <Text style={styles.centerLabelSubtext}>Total</Text>
+            </View>
+          )}
+        />
+        <View style={styles.legendContainer}>
+          {data.map((item, index) => (
+            <View key={index} style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: item.color }]} />
+              <Text style={styles.legendText}>{`${item.label}: ${bytesToSize(item.value)}`}</Text>
+            </View>
+          ))}
         </View>
       </View>
     );
   };
 
-  const renderBarChart = (data, maxValue) => {
+  const renderDataTransferInfo = () => {
+    if (!usageData) return null;
     return (
-      <View style={styles.barChart}>
-        {data.map((value, index) => (
-          <View key={index} style={styles.barContainer}>
-            <View style={[styles.bar, { height: `${(value / maxValue) * 100}%` }]} />
-            <Text style={styles.barLabel}>${value}</Text>
-          </View>
-        ))}
+      <View>
+        <Text style={styles.infoText}>Agent Inbound: {bytesToSize(usageData.dataTransfer.agentIn)}</Text>
+        <Text style={styles.infoText}>Agent Outbound: {bytesToSize(usageData.dataTransfer.agentOut)}</Text>
+        <Text style={styles.infoText}>VBR Inbound: {bytesToSize(usageData.dataTransfer.vbrIn)}</Text>
+        <Text style={styles.infoText}>VBR Outbound: {bytesToSize(usageData.dataTransfer.vbrOut)}</Text>
+      </View>
+    );
+  };
+
+  const renderCloudReplicasInfo = () => {
+    if (!usageData) return null;
+    return (
+      <View>
+        <Text style={styles.infoText}>Number of Replicas: {usageData.cloudReplicas.count}</Text>
+        <Text style={styles.infoText}>Compute Time: {usageData.cloudReplicas.computeTime} seconds</Text>
+        <Text style={styles.infoText}>Storage Used: {bytesToSize(usageData.cloudReplicas.storageUsage)}</Text>
+        <Text style={styles.infoText}>Data Inbound: {bytesToSize(usageData.cloudReplicas.dataIn)}</Text>
+        <Text style={styles.infoText}>Data Outbound: {bytesToSize(usageData.cloudReplicas.dataOut)}</Text>
+      </View>
+    );
+  };
+
+  const renderManagedResourcesInfo = () => {
+    if (!usageData) return null;
+    return (
+      <View>
+        <Text style={styles.infoText}>Server Agents: {usageData.managedResources.serverAgents}</Text>
+        <Text style={styles.infoText}>Workstation Agents: {usageData.managedResources.workstationAgents}</Text>
+        <Text style={styles.infoText}>Virtual Machines: {usageData.managedResources.vms}</Text>
+        <Text style={styles.infoText}>Cloud VMs: {usageData.managedResources.cloudVms}</Text>
+      </View>
+    );
+  };
+
+  const renderFileSharesInfo = () => {
+    if (!usageData) return null;
+    return (
+      <View>
+        <Text style={styles.infoText}>Archive Size: {bytesToSize(usageData.fileShares.archiveSize)}</Text>
+        <Text style={styles.infoText}>Backup Size: {bytesToSize(usageData.fileShares.backupSize)}</Text>
+        <Text style={styles.infoText}>Source Size: {bytesToSize(usageData.fileShares.sourceSize)}</Text>
+        <Text style={styles.infoText}>Protected Shares: {usageData.fileShares.protected}</Text>
+      </View>
+    );
+  };
+
+  const renderO365Info = () => {
+    if (!usageData) return null;
+    return (
+      <View>
+        <Text style={styles.infoText}>Archive Size: {bytesToSize(usageData.o365.archiveSize)}</Text>
+        <Text style={styles.infoText}>Backup Size: {bytesToSize(usageData.o365.backupSize)}</Text>
+        <Text style={styles.infoText}>Protected Groups: {usageData.o365.protectedGroups}</Text>
+        <Text style={styles.infoText}>Protected Sites: {usageData.o365.protectedSites}</Text>
+        <Text style={styles.infoText}>Protected Teams: {usageData.o365.protectedTeams}</Text>
+        <Text style={styles.infoText}>Protected Users: {usageData.o365.protectedUsers}</Text>
+      </View>
+    );
+  };
+
+  const renderO365ProtectedItemsChart = () => {
+    if (!usageData) return null;
+    const data = [
+      { value: usageData.o365.protectedGroups, label: 'Groups', frontColor: '#177AD5' },
+      { value: usageData.o365.protectedSites, label: 'Sites', frontColor: '#79D2DE' },
+      { value: usageData.o365.protectedTeams, label: 'Teams', frontColor: '#F5A623' },
+      { value: usageData.o365.protectedUsers, label: 'Users', frontColor: '#FD6585' },
+    ];
+
+    return (
+      <View>
+        <Text style={styles.chartTitle}>O365 Protected Items</Text>
+        <BarChart
+          data={data}
+          width={width - 64}
+          height={200}
+          barWidth={40}
+          spacing={20}
+          roundedTop
+          roundedBottom
+          hideRules
+          xAxisThickness={0}
+          yAxisThickness={0}
+          yAxisTextStyle={{ color: '#333' }}
+          noOfSections={5}
+          maxValue={Math.max(...data.map(item => item.value), 10)}
+          labelWidth={40}
+          backgroundColor="#fff"
+        />
       </View>
     );
   };
@@ -95,14 +288,14 @@ const BillingDashboardScreen = () => {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>Billing Dashboard</Text>
-
-        {renderStorageQuotaUsage()}
-        {renderLicensesUsage()}
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Monthly Billing (Last 6 Months)</Text>
-          {renderBarChart(monthlyBilling, Math.max(...monthlyBilling))}
-        </View>
+        {renderCard('Cloud Backups', renderBackupsChart(), 'backups')}
+        {renderCard('Cloud Storage Usage', renderCloudStorageUsageChart(), 'cloudStorage')}
+        {renderCard('Data Transfer', renderDataTransferInfo(), 'dataTransfer')}
+        {renderCard('Cloud Replicas', renderCloudReplicasInfo(), 'cloudReplicas')}
+        {renderCard('Managed Resources', renderManagedResourcesInfo(), 'managedResources')}
+        {renderCard('File Shares', renderFileSharesInfo(), 'fileShares')}
+        {renderCard('Office 365 Backup', renderO365Info(), 'o365')}
+        {renderCard('O365 Protected Items', renderO365ProtectedItemsChart(), 'o365Chart')}
       </ScrollView>
     </SafeAreaView>
   );
@@ -133,62 +326,56 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
     color: '#004D40',
   },
-  quotaBar: {
-    height: 20,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  quotaUsed: {
-    height: '100%',
-    backgroundColor: '#004D40',
-  },
-  quotaText: {
-    marginTop: 8,
-    textAlign: 'center',
-    color: '#666',
-  },
-  licenseContainer: {
-    marginTop: 8,
-  },
-  licenseText: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  licenseTotalText: {
+  chartTitle: {
     fontSize: 16,
     fontWeight: 'bold',
+    marginBottom: 8,
     color: '#004D40',
-    marginTop: 8,
   },
-  barChart: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 200,
+  infoText: {
+    fontSize: 14,
+    marginBottom: 5,
+    color: '#333',
   },
-  barContainer: {
-    flex: 1,
+  centerLabel: {
+    justifyContent: 'center',
     alignItems: 'center',
-    justifyContent: 'flex-end',
   },
-  bar: {
-    width: '80%',
-    backgroundColor: '#004D40',
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
+  centerLabelText: {
+    fontSize: 18,
+    fontWeight: 'bold',
   },
-  barLabel: {
-    marginTop: 4,
+  centerLabelSubtext: {
     fontSize: 12,
-    color: '#666',
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 20,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendColor: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 5,
+  },
+  legendText: {
+    fontSize: 12,
   },
 });
 
